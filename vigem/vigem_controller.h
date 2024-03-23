@@ -10,6 +10,7 @@
 
 #include <Windows.h>
 #include "sdk/ViGEm/Client.h"
+#include "vigem_defs.h"
 
 namespace tc
 {
@@ -21,6 +22,7 @@ namespace tc
 
         bool Connect();
         bool AllocController();
+        void SendGamepadState(int index, const XInputGamepadState& state);
 
         void MockPressB();
 

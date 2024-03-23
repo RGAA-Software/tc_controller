@@ -74,4 +74,9 @@ namespace tc
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
 
+    void VigemController::SendGamepadState(int index, const XInputGamepadState &state) {
+        XInputGamepadState* gs = const_cast<XInputGamepadState*>(&state);
+        vigem_target_x360_update(client_, target_, *reinterpret_cast<XUSB_REPORT*>(gs));
+    }
+
 }
