@@ -16,6 +16,7 @@ if (WIN32)
         sdk/ViGEmClient.cpp
         vigem_driver_manager.cpp
         vigem_controller.cpp
+        ../hardware.cpp
     )
     add_library(${PROJECT_NAME} ${SRCS})
     target_link_libraries(${PROJECT_NAME} tc_common_new Setupapi.lib)
