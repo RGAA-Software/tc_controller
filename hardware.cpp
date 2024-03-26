@@ -21,23 +21,14 @@ namespace tc
 //    [2024-03-25 11:09:06.238][thread 47940][hardware.cpp:248,tc::Hardware::DetectCpuDisk][info] : Driver name: vjoy
 //    [2024-03-25 11:09:06.238][thread 47940][hardware.cpp:256,tc::Hardware::DetectCpuDisk][info] : Driver display name: vJoy Device
 
-    void Hardware::Detect() {
-        this->DetectCpuDisk();
-        //this->DetectMac();
-    }
-
-    int Hardware::DetectCpuDisk() {
-        HRESULT hres;
-
-        // 初始化COM库
+    int Hardware::Detect(bool cpu, bool disk, bool driver) {
         CoUninitialize();
-        hres = CoInitializeEx(0, COINIT_MULTITHREADED);
+        HRESULT hres = CoInitializeEx(0, COINIT_MULTITHREADED);
         if (FAILED(hres)) {
-            std::cout << "COM library initialization failed." << std::endl;
-            return 1;
+            LOGE("COM library initialization failed.");
+            return -1;
         }
 
-        // 初始化安全
         hres = CoInitializeSecurity(
                 NULL,
                 -1,
@@ -50,12 +41,11 @@ namespace tc
                 NULL
         );
         if (FAILED(hres)) {
-            std::cout << "Failed to initialize security." << std::endl;
+            LOGE("Failed to initialize security: {:x}", hres);
             CoUninitialize();
-            return 1;
+            return -1;
         }
 
-        // 创建WMI接口
         IWbemLocator *pLoc = NULL;
         hres = CoCreateInstance(
                 CLSID_WbemLocator,
@@ -65,13 +55,12 @@ namespace tc
                 (LPVOID *) &pLoc
         );
         if (FAILED(hres)) {
-            std::cout << "Failed to create IWbemLocator object." << std::endl;
+            LOGE("Failed to create IWbemLocator object.");
             CoUninitialize();
-            return 1;
+            return -1;
         }
 
         IWbemServices *pSvc = NULL;
-        // 使用WMI连接到CIMV2命名空间
         hres = pLoc->ConnectServer(
                 _bstr_t(L"ROOT\\CIMV2"),
                 NULL,
@@ -83,15 +72,12 @@ namespace tc
                 &pSvc
         );
         if (FAILED(hres)) {
-            std::cout << "Could not connect to WMI server." << std::endl;
+            LOGE("Could not connect to WMI server.");
             pLoc->Release();
             CoUninitialize();
-            return 1;
+            return -1;
         }
 
-        std::cout << "Connected to WMI server." << std::endl;
-
-        // 设置安全
         hres = CoSetProxyBlanket(
                 pSvc,
                 RPC_C_AUTHN_WINNT,
@@ -103,165 +89,175 @@ namespace tc
                 EOAC_NONE
         );
         if (FAILED(hres)) {
-            std::cout << "Could not set proxy blanket." << std::endl;
+            LOGE("Could not set proxy blanket.");
             pSvc->Release();
             pLoc->Release();
             CoUninitialize();
-            return 1;
+            return -1;
         }
 
-        // 获取CPU序列号
         IEnumWbemClassObject *pEnumerator = NULL;
-        hres = pSvc->ExecQuery(
-                bstr_t("WQL"),
-                bstr_t("SELECT * FROM Win32_Processor"),
-                WBEM_FLAG_FORWARD_ONLY | WBEM_FLAG_RETURN_IMMEDIATELY,
-                NULL,
-                &pEnumerator
-        );
-
-        if (FAILED(hres)) {
-            std::cout << "Query for processor information failed." << std::endl;
-            pSvc->Release();
-            pLoc->Release();
-            CoUninitialize();
-            return 1;
-        }
-
-        // 获取数据
         IWbemClassObject *pclsObj = NULL;
         ULONG uReturn = 0;
-        while (pEnumerator) {
-            HRESULT hr = pEnumerator->Next(WBEM_INFINITE, 1, &pclsObj, &uReturn);
-            if (0 == uReturn) {
-                break;
+
+        hw_disks_.clear();
+        drivers_.clear();
+
+        // CPU
+        if (cpu) {
+            hres = pSvc->ExecQuery(
+                    bstr_t("WQL"),
+                    bstr_t("SELECT * FROM Win32_Processor"),
+                    WBEM_FLAG_FORWARD_ONLY | WBEM_FLAG_RETURN_IMMEDIATELY,
+                    NULL,
+                    &pEnumerator
+            );
+
+            if (FAILED(hres)) {
+                LOGE("Query for processor information failed.");
+                pSvc->Release();
+                pLoc->Release();
+                CoUninitialize();
+                return -1;
             }
 
-            VARIANT vtProp;
-            hr = pclsObj->Get(L"ProcessorId", 0, &vtProp, 0, 0);  // "ProcessorId" 是属性名，不同的信息需要查询不同的属性名
-            if (SUCCEEDED(hr)) {
-                std::wcout << "CPU ID : " << vtProp.bstrVal << std::endl;
-                hw_cpu_.id_ = StringExt::ToUTF8(vtProp.bstrVal);
-            }
-            VariantClear(&vtProp);
+            while (pEnumerator) {
+                HRESULT hr = pEnumerator->Next(WBEM_INFINITE, 1, &pclsObj, &uReturn);
+                if (0 == uReturn || FAILED(hr)) {
+                    break;
+                }
 
-            pclsObj->Release();
+                VARIANT vtProp;
+                hr = pclsObj->Get(L"ProcessorId", 0, &vtProp, 0, 0);  // "ProcessorId" 是属性名，不同的信息需要查询不同的属性名
+                if (SUCCEEDED(hr)) {
+                    hw_cpu_.id_ = StringExt::ToUTF8(vtProp.bstrVal);
+                }
+                VariantClear(&vtProp);
+                pclsObj->Release();
+            }
         }
 
-        //////
-        hres = pSvc->ExecQuery(
-                bstr_t("WQL"),
-                bstr_t("SELECT * FROM Win32_DiskDrive"),
-                WBEM_FLAG_FORWARD_ONLY | WBEM_FLAG_RETURN_IMMEDIATELY,
-                NULL,
-                &pEnumerator);
+        if (disk) {
+            hres = pSvc->ExecQuery(
+                    bstr_t("WQL"),
+                    bstr_t("SELECT * FROM Win32_DiskDrive"),
+                    WBEM_FLAG_FORWARD_ONLY | WBEM_FLAG_RETURN_IMMEDIATELY,
+                    NULL,
+                    &pEnumerator);
 
-        if (FAILED(hres)) {
-            std::cout << "Query for operating system name failed."
-                      << " Error code = 0x"
-                      << std::hex << hres << std::endl;
-            pSvc->Release();
-            pLoc->Release();
-            CoUninitialize();
-            return 1; // Program has failed.
-        }
-
-
-        uReturn = 0;
-        while (pEnumerator) {
-            HRESULT hr = pEnumerator->Next(WBEM_INFINITE, 1,
-                                           &pclsObj, &uReturn);
-            if (0 == uReturn || FAILED(hr)) {
-                break;
+            if (FAILED(hres)) {
+                LOGE("Query for operating system name failed, Error code = {}", hres);
+                pSvc->Release();
+                pLoc->Release();
+                CoUninitialize();
+                return -1; // Program has failed.
             }
 
-            HwDisk disk;
+            uReturn = 0;
+            while (pEnumerator) {
+                HRESULT hr = pEnumerator->Next(WBEM_INFINITE, 1, &pclsObj, &uReturn);
+                if (0 == uReturn || FAILED(hr)) {
+                    break;
+                }
 
-            VARIANT vtProp;
+                HwDisk disk{};
 
-//            std::cout << "----------------------------------" << std::endl;
-//            std::cout << "Retrieve DISK Info" << std::endl;
-//            std::cout << "----------------------------------" << std::endl;
-            // Get the value of the Name property
-            hr = pclsObj->Get(L"Name", 0, &vtProp, 0, 0);
+                VARIANT vtProp;
+
+                // Get the value of the Name property
+                hr = pclsObj->Get(L"Name", 0, &vtProp, 0, 0);
 //            std::wcout << " Disk Name : " << vtProp.bstrVal << std::endl;
-            disk.name_ = StringExt::ToUTF8(vtProp.bstrVal);
-            VariantClear(&vtProp);
+                disk.name_ = StringExt::ToUTF8(vtProp.bstrVal);
+                VariantClear(&vtProp);
 
-            hr = pclsObj->Get(L"Model", 0, &vtProp, 0, 0);
+                hr = pclsObj->Get(L"Model", 0, &vtProp, 0, 0);
 //            std::wcout << " Disk Model : " << vtProp.bstrVal << std::endl;
-            disk.model_ = StringExt::ToUTF8(vtProp.bstrVal);
-            VariantClear(&vtProp);
+                disk.model_ = StringExt::ToUTF8(vtProp.bstrVal);
+                VariantClear(&vtProp);
 
-            hr = pclsObj->Get(L"Status", 0, &vtProp, 0, 0);
+                hr = pclsObj->Get(L"Status", 0, &vtProp, 0, 0);
 //            std::wcout << " Status : " << vtProp.bstrVal << std::endl;
-            disk.status_ = StringExt::ToUTF8(vtProp.bstrVal);
-            VariantClear(&vtProp);
+                disk.status_ = StringExt::ToUTF8(vtProp.bstrVal);
+                VariantClear(&vtProp);
 
-            hr = pclsObj->Get(L"DeviceID", 0, &vtProp, 0, 0);
+                hr = pclsObj->Get(L"DeviceID", 0, &vtProp, 0, 0);
 //            std::wcout << " Device ID : " << vtProp.bstrVal << std::endl;
-            VariantClear(&vtProp);
+                VariantClear(&vtProp);
 
 
-            hr = pclsObj->Get(L"SerialNumber", 0, &vtProp, 0, 0);
+                hr = pclsObj->Get(L"SerialNumber", 0, &vtProp, 0, 0);
 //            std::wcout << " SerialNumber : " << vtProp.bstrVal << std::endl;
-            disk.serial_number_ = StringExt::ToUTF8(vtProp.bstrVal);
-            VariantClear(&vtProp);
+                disk.serial_number_ = StringExt::ToUTF8(vtProp.bstrVal);
+                VariantClear(&vtProp);
 
-            //InterfaceType
-            hr = pclsObj->Get(L"InterfaceType", 0, &vtProp, 0, 0);
-            disk.interface_type_ = StringExt::ToUTF8(vtProp.bstrVal);
-            VariantClear(&vtProp);
+                //InterfaceType
+                hr = pclsObj->Get(L"InterfaceType", 0, &vtProp, 0, 0);
+                disk.interface_type_ = StringExt::ToUTF8(vtProp.bstrVal);
+                VariantClear(&vtProp);
 
-            pclsObj->Release();
+                pclsObj->Release();
 
-            if (disk.interface_type_ == "IDE") {
-                hw_disks_.push_back(disk);
+                if (disk.interface_type_ == "IDE") {
+                    hw_disks_.push_back(disk);
+                }
             }
         }
 
         // system driver
-        hres = pSvc->ExecQuery(
-                bstr_t("WQL"),
-                bstr_t("SELECT * FROM Win32_SystemDriver"),
-                WBEM_FLAG_FORWARD_ONLY | WBEM_FLAG_RETURN_IMMEDIATELY,
-                NULL,
-                &pEnumerator);
+        if (driver) {
+            hres = pSvc->ExecQuery(
+                    bstr_t("WQL"),
+                    bstr_t("SELECT * FROM Win32_SystemDriver"),
+                    WBEM_FLAG_FORWARD_ONLY | WBEM_FLAG_RETURN_IMMEDIATELY,
+                    NULL,
+                    &pEnumerator);
 
-        if (FAILED(hres)) {
-            std::cout << "Query for operating system name failed."
-                      << " Error code = 0x"
-                      << std::hex << hres << std::endl;
-            pSvc->Release();
-            pLoc->Release();
-            CoUninitialize();
-            return 1; // Program has failed.
-        }
-
-        uReturn = 0;
-        while (pEnumerator) {
-            HRESULT hr = pEnumerator->Next(WBEM_INFINITE, 1,&pclsObj, &uReturn);
-            if (0 == uReturn || FAILED(hr)) {
-                break;
+            if (FAILED(hres)) {
+                LOGE("Query for SystemDriver name failed.  Error code = {}", hres);
+                pSvc->Release();
+                pLoc->Release();
+                CoUninitialize();
+                return -1;
             }
-            VARIANT vtProp;
-            hr = pclsObj->Get(L"Name", 0, &vtProp, 0, 0);
-            if (FAILED(hr)) {
-                continue;
-            }
-            auto name = StringExt::ToUTF8(vtProp.bstrVal);
-            LOGI("Driver name: {}", name);
-            VariantClear(&vtProp);
 
-            hr = pclsObj->Get(L"DisplayName", 0, &vtProp, 0, 0);
-            if (FAILED(hr)) {
-                continue;
-            }
-            auto display_name = StringExt::ToUTF8(vtProp.bstrVal);
-            LOGI("Driver display name: {}", display_name);
-            VariantClear(&vtProp);
+            uReturn = 0;
+            while (pEnumerator) {
+                HRESULT hr = pEnumerator->Next(WBEM_INFINITE, 1, &pclsObj, &uReturn);
+                if (0 == uReturn || FAILED(hr)) {
+                    break;
+                }
 
-            pclsObj->Release();
+                VARIANT vtProp;
+                SysDriver driver;
+
+                hr = pclsObj->Get(L"Name", 0, &vtProp, 0, 0);
+                if (FAILED(hr)) {
+                    continue;
+                }
+                auto name = StringExt::ToUTF8(vtProp.bstrVal);
+                driver.name_ = name;
+                VariantClear(&vtProp);
+
+                hr = pclsObj->Get(L"DisplayName", 0, &vtProp, 0, 0);
+                if (FAILED(hr)) {
+                    continue;
+                }
+                auto display_name = StringExt::ToUTF8(vtProp.bstrVal);
+                driver.display_name_ = display_name;
+                VariantClear(&vtProp);
+
+                hr = pclsObj->Get(L"State", 0, &vtProp, 0, 0);
+                if (FAILED(hr)) {
+                    continue;
+                }
+                auto state = StringExt::ToUTF8(vtProp.bstrVal);
+                driver.state_ = state;
+                VariantClear(&vtProp);
+
+                drivers_.push_back(driver);
+
+                pclsObj->Release();
+            }
         }
 
         // 清理资源

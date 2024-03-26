@@ -25,6 +25,7 @@ namespace tc
             LOGE("Connect failed !!!!");
             return false;
         }
+
         return true;
     }
 

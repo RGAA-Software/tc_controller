@@ -25,6 +25,13 @@ namespace tc
         std::string interface_type_;
     };
 
+    class SysDriver {
+    public:
+        std::string name_;
+        std::string display_name_;
+        std::string state_;
+    };
+
     class Hardware {
     public:
 
@@ -33,18 +40,19 @@ namespace tc
             return &hw;
         }
 
-        void Detect();
+        int Detect(bool cpu, bool disk, bool driver);
         void Dump();
 
+        std::vector<SysDriver> GetDrivers() { return drivers_; }
+
     private:
-        int DetectCpuDisk();
         void DetectMac();
 
     public:
 
         HwCPU hw_cpu_;
         std::vector<HwDisk> hw_disks_;
-
+        std::vector<SysDriver> drivers_;
     };
 
 }

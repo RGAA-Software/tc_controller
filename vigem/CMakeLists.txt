@@ -14,8 +14,8 @@ if (WIN32)
     set(SRCS
         #sdk
         sdk/ViGEmClient.cpp
-        vigem_driver_manager.cpp
         vigem_controller.cpp
+        ../vigem_driver_manager.cpp
         ../hardware.cpp
     )
     add_library(${PROJECT_NAME} ${SRCS})
