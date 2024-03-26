@@ -18,7 +18,7 @@ namespace tc
         static std::shared_ptr<VigemDriverManager> Make();
 
         VigemDriverManager();
-        void Detect();
+        bool Detect();
         bool IsVigemDriverInstalled() { return is_vigem_driver_installed_; }
         bool IsVJoyDriverInstalled() { return is_vjoy_driver_installed_; }
 
