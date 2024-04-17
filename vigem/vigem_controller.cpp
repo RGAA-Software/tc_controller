@@ -59,6 +59,19 @@ namespace tc
         return true;
     }
 
+    void VigemController::Exit() {
+        if (client_ && target_) {
+            vigem_target_remove(client_, target_);
+        }
+        if (target_) {
+            vigem_target_free(target_);
+        }
+        if (client_) {
+            vigem_disconnect(client_);
+            vigem_free(client_);
+        }
+    }
+
     void VigemController::MockPressB() {
         //xbox
         // The XINPUT_GAMEPAD structure is identical to the XUSB_REPORT structure

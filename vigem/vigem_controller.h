@@ -23,6 +23,7 @@ namespace tc
         bool Connect();
         bool AllocController();
         void SendGamepadState(int index, const XInputGamepadState& state);
+        void Exit();
 
         void MockPressB();
 
