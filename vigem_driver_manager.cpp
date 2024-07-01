@@ -9,8 +9,6 @@
 #include "tc_common_new/process_util.h"
 #include "tc_common_new/string_ext.h"
 #include "vigem/sdk/ViGEm/Client.h"
-#include <boost/filesystem/path.hpp>
-#include <boost/filesystem/operations.hpp>
 
 namespace tc
 {
