@@ -53,7 +53,7 @@ namespace tc
         } else {
             const auto ret = vigem_connect(client);
             if (!VIGEM_SUCCESS(ret)) {
-                LOGE("Connect failed !!!!");
+                //LOGE("Connect failed !!!!");
             } else {
                 vigem_disconnect(client);
                 connect_result = true;
