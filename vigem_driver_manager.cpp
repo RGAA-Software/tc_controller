@@ -7,7 +7,7 @@
 #include "tc_common_new/hardware.h"
 #include "tc_common_new/log.h"
 #include "tc_common_new/process_util.h"
-#include "tc_common_new/string_ext.h"
+#include "tc_common_new/string_util.h"
 #include "vigem/sdk/ViGEm/Client.h"
 
 namespace tc
@@ -68,7 +68,7 @@ namespace tc
     void VigemDriverManager::InstallViGem() {
 #if 0
         auto exe_folder_path = boost::filesystem::initial_path<boost::filesystem::path>().string();
-        StringExt::Replace(exe_folder_path, R"(\)", R"(/)");
+        StringUtil::Replace(exe_folder_path, R"(\)", R"(/)");
         auto work_dir = std::format("{}/driver/vigem", exe_folder_path);
         // 1. remove
         LOGI("Vigem remove");
